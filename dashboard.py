@@ -454,9 +454,10 @@ st.divider()
 # ── KS 檢定表 ─────────────────────────────────────────────────
 st.subheader('🔬 機率分配擬合（KS 檢定）')
 st.dataframe(pd.DataFrame([{
-    '分配':      info['label'],
-    'KS p-value': f"{info['ks_p']:.4f}",
-    '結果':      '✅ 最佳' if name == sim['best'] else ''
+    '分配':          info['label'],
+    'KS statistic':  f"{info['ks_p']:.2e}",
+    '判讀':          'p 越大越好擬合',
+    '結果':          '✅ 最佳' if name == sim['best'] else ''
 } for name, info in sim['fits'].items()]),
 use_container_width=True, hide_index=True)
 
