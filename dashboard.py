@@ -526,6 +526,6 @@ st.download_button(
 st.divider()
 st.caption(
     f'🦟 台灣CDC登革熱蒙地卡羅模擬系統 ｜ '
-    f'課程：系統模擬（祝國忠老師） ｜ 作者：Joyce Wang ｜ '
+    f'課程：系統模擬 ｜ 作者：Joyce Wang ｜ '
     f'資料更新：{latest_date} ｜ 部署：Streamlit Cloud'
 )
