@@ -57,7 +57,7 @@ st.sidebar.markdown('**📡 資料來源**')
 if st.sidebar.button('🔄 自動下載最新資料（CDC）', use_container_width=True):
     with st.spinner('正在從疾管署下載最新資料...'):
         try:
-            resp = requests.get(CDC_CSV_URL, timeout=30)
+            resp = requests.get(CDC_CSV_URL, timeout=30, verify=False)
             resp.raise_for_status()
             st.session_state['auto_csv_bytes'] = resp.content
             st.sidebar.success('✅ 下載成功！')
