@@ -1,7 +1,3 @@
-# ============================================================
-#  CDC 登革熱資料自動下載腳本
-#  由 GitHub Actions 每週一 08:00（台灣時間）自動執行
-# ============================================================
 import requests
 import os
 from datetime import datetime
@@ -20,18 +16,22 @@ def download():
     with open(DENGUE_PATH, 'wb') as f:
         f.write(resp.content)
     size_kb = len(resp.content) / 1024
-    print(f'✅ 下載完成！儲存至 {DENGUE_PATH}（{size_kb:.0f} KB）')
+    print(f'✅ 下載完成！{DENGUE_PATH}（{size_kb:.0f} KB）')
 
 def download_mosindex():
+    """MosIndex 只在本地執行，不放 GitHub Actions（檔案太大）"""
     print(f'[{datetime.now()}] 開始下載 MosIndex_All.csv ...')
     os.makedirs('data', exist_ok=True)
-    resp = requests.get(MOS_URL, timeout=120, verify=False)
+    resp = requests.get(MOS_URL, timeout=300, verify=False)
     resp.raise_for_status()
     with open(MOS_PATH, 'wb') as f:
         f.write(resp.content)
     size_mb = len(resp.content) / 1024 / 1024
-    print(f'✅ MosIndex 下載完成！儲存至 {MOS_PATH}（{size_mb:.1f} MB）')
+    print(f'✅ MosIndex 下載完成！{MOS_PATH}（{size_mb:.1f} MB）')
 
 if __name__ == '__main__':
-    download()
-    download_mosindex()
+    import sys
+    if '--mos' in sys.argv:
+        download_mosindex()   # 只有加 --mos 才下載（本地手動用）
+    else:
+        download()            # GitHub Actions 只跑這個
