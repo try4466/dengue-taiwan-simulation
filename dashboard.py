@@ -284,7 +284,7 @@ c5.metric('爆發機率',      f"{sim['outbreak_prob']:.1f}%",
 st.divider()
 
 # ── 圖表分頁 ─────────────────────────────────────────────────
-tab1, tab2 = st.tabs(['📈 病例數模擬', '🔴 R 值分析'])
+tab1, tab2, tab3 = st.tabs(['📈 病例數模擬', '🔴 R 值分析', '🦟 布氏指數分析'])
 
 # ── 從 sim 取出 hist_annual（兩個 tab 都需要）────────────────
 ha = sim['hist_annual']
@@ -530,3 +530,114 @@ st.caption(
     f'課程：系統模擬 ｜ 作者：Joyce Wang ｜ '
     f'資料更新：{latest_date} ｜ 部署：Streamlit Cloud'
 )
+# ── Tab 3：布氏指數分析 ───────────────────────────────────────
+with tab3:
+    st.subheader('🦟 病媒蚊布氏指數 × 登革熱病例相關分析')
+
+    import os
+    from scipy import stats as sp_stats
+
+    # 讀取預處理好的資料
+    bi_path  = 'data/bi_dengue_merged.csv'
+    corr_path = 'data/bi_county_corr.csv'
+
+    if not os.path.exists(bi_path):
+        st.warning('⚠️ 尚未找到布氏指數資料，請先在本地執行 bi_merge.py')
+        st.stop()
+
+    merged = pd.read_csv(bi_path, encoding='utf-8-sig')
+    corr_df = pd.read_csv(corr_path, encoding='utf-8-sig')
+
+    # 側欄縣市選單（只在 tab3 顯示）
+    counties = ['全台'] + sorted(merged['County'].unique().tolist())
+    selected = st.selectbox('選擇縣市', counties, index=0)
+
+    col1, col2 = st.columns(2)
+
+    # ── 圖A：Pearson r 長條圖 ──────────────────────────────────
+    with col1:
+        st.markdown('**各縣市 Pearson 相關係數**')
+        corr_sorted = corr_df.sort_values('r', ascending=True)
+        colors = ['#D94F3D' if r >= 0 else '#4F81BD'
+                  for r in corr_sorted['r']]
+        figA = go.Figure(go.Bar(
+            x=corr_sorted['r'],
+            y=corr_sorted['縣市'],
+            orientation='h',
+            marker_color=colors,
+            text=[f"r={r:.3f}{'✓' if s=='✓' else ''}"
+                  for r, s in zip(corr_sorted['r'], corr_sorted['顯著'])],
+            textposition='outside',
+        ))
+        figA.add_vline(x=0, line_width=1.5, line_color='black')
+        figA.update_layout(
+            xaxis=dict(range=[-0.55, 0.85]),
+            height=500,
+            template='plotly_white',
+            margin=dict(l=70, r=100, t=20, b=20)
+        )
+        st.plotly_chart(figA, use_container_width=True)
+
+    # ── 圖B：BI × 病例散佈圖 ───────────────────────────────────
+    with col2:
+        st.markdown('**布氏指數 × 月病例數散佈圖**')
+        plot_df = merged if selected == '全台' else merged[merged['County'] == selected]
+        r_val, p_val = sp_stats.pearsonr(plot_df['BI_mean'], plot_df['cases'])
+
+        figB = go.Figure()
+        figB.add_trace(go.Scatter(
+            x=plot_df['BI_mean'], y=plot_df['cases'],
+            mode='markers',
+            marker=dict(color='#378ADD', opacity=0.6, size=7),
+            customdata=plot_df[['year','month','County']].values,
+            hovertemplate='%{customdata[2]} %{customdata[0]}年%{customdata[1]}月<br>'
+                          'BI=%{x:.2f}　病例=%{y}<extra></extra>',
+        ))
+        # 趨勢線
+        import numpy as np
+        z = np.polyfit(plot_df['BI_mean'], plot_df['cases'], 1)
+        x_r = np.linspace(plot_df['BI_mean'].min(), plot_df['BI_mean'].max(), 100)
+        figB.add_trace(go.Scatter(
+            x=x_r, y=np.poly1d(z)(x_r),
+            mode='lines', name='趨勢線',
+            line=dict(color='red', width=2, dash='dash')
+        ))
+        figB.update_layout(
+            xaxis_title='布氏指數（月平均）',
+            yaxis_title='月病例數',
+            title=f'Pearson r = {r_val:.3f}　p = {p_val:.4f}',
+            height=500,
+            template='plotly_white',
+            showlegend=False,
+            margin=dict(t=50, b=40)
+        )
+        st.plotly_chart(figB, use_container_width=True)
+
+    # ── 圖C：時序圖（單一縣市）────────────────────────────────
+    if selected != '全台':
+        st.markdown(f'**{selected}：布氏指數 vs 月病例數時序**')
+        ts = plot_df.copy()
+        ts['date'] = pd.to_datetime(ts[['year','month']].assign(day=1))
+        ts = ts.sort_values('date')
+
+        figC = make_subplots(specs=[[{"secondary_y": True}]])
+        figC.add_trace(go.Bar(
+            x=ts['date'], y=ts['cases'],
+            name='月病例數',
+            marker_color='rgba(216,90,48,0.5)'
+        ), secondary_y=False)
+        figC.add_trace(go.Scatter(
+            x=ts['date'], y=ts['BI_mean'],
+            name='布氏指數',
+            line=dict(color='#1D9E75', width=2)
+        ), secondary_y=True)
+        figC.update_layout(
+            template='plotly_white', height=380,
+            legend=dict(orientation='h', y=1.05),
+            margin=dict(t=30, b=30)
+        )
+        figC.update_yaxes(title_text='月病例數', secondary_y=False)
+        figC.update_yaxes(title_text='布氏指數', secondary_y=True)
+        st.plotly_chart(figC, use_container_width=True)
+    else:
+        st.info('💡 選擇特定縣市可查看 BI 與病例的時序對比圖')
