@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  台灣登革熱蒙地卡羅模擬 - Streamlit 儀表板
 #  作者：Joyce Wang（142216013）
 #  課程：系統模擬（祝國忠老師）
@@ -284,7 +284,7 @@ c5.metric('爆發機率',      f"{sim['outbreak_prob']:.1f}%",
 st.divider()
 
 # ── 圖表分頁 ─────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(['📈 病例數模擬', '🔴 R 值分析', '🦟 布氏指數分析'])
+tab1, tab2, tab3, tab4 = st.tabs(['📈 病例數模擬', '🔴 R 值分析', '🦟 布氏指數分析', '🌡️ 氣象分析'])
 
 # ── 從 sim 取出 hist_annual（兩個 tab 都需要）────────────────
 ha = sim['hist_annual']
@@ -362,6 +362,28 @@ with tab1:
     )
     fig.update_xaxes(tickangle=45, row=1, col=1)
     st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    with st.expander('📋 方法論'):
+        st.markdown("""
+**資料來源**
+- 疾病管制署開放資料平台：登革熱確定病例（Dengue_Daily.csv）
+- 本土病例，涵蓋 2003~2026 年
+
+**分析方法**
+- Step 1：KS 檢定比較常態、對數常態、Gamma 三種分配，對數常態擬合最佳
+- Step 2：以對數常態參數執行 10,000 次蒙地卡羅模擬，輸出 95% CI 與爆發機率
+- Step 3：大數法則驗證，約 2,000 次迭代後累積平均收斂
+
+**假設與限制**
+- 假設歷史分配未來仍適用，不考慮氣候變遷與人口免疫力變化
+- 蒙地卡羅為靜態模擬，無法即時吸收新病例資訊
+
+**文獻支持**
+- Sawadogo et al. (2024) Applied Mathematics — 大數法則驗證登革熱隨機模型
+- MCMC + SIR dengue outbreak prediction (2022) PMID: 35361845
+- Nishiura & Halstead (2007) JID — 登革熱世代間隔 14 天
+        """)
 
 with tab2:
     st.subheader('R 值分析（Python Wallinga-Lipsitch 估計）')
@@ -448,6 +470,39 @@ with tab2:
                         else '🟢 控制 (R≤1)' for y in years_rt],
         })
         st.dataframe(rt_df, use_container_width=True, hide_index=True)
+
+        st.divider()
+        with st.expander('📋 方法論'):
+            st.markdown("""
+**資料來源**
+- 疾病管制署 Dengue_Daily.csv 本土病例週別資料，2003~2026 年
+
+**分析方法**
+
+*Python Wallinga-Lipsitch 近似法*
+- 公式：Rt ≈ C(t) / C(t - SI)，SI = 世代間隔 = 14 天（2 週）
+- 以週別病例數反推估計有效再生數，僅計算分母週次病例數 > 5 的週次
+- 模擬 R 值分佈：以 Gamma 分配擬合歷史 Rt，進行 10,000 次模擬
+
+*R EpiEstim 貝氏估計（延伸驗證）*
+- 採用 Cori et al. (2013) 方法，以貝氏後驗分佈估計每時間點的 Rt
+- 世代間隔 14 天，滑動窗口 7 週，僅計算有病例傳播的週次
+- EpiEstim Rt 中位數（1.42）高於 Python（0.89），因排除零病例週次
+
+*兩者差異說明*
+- Python Wallinga 法：含零病例週次，Rt 中位數偏低（0.89）
+- R EpiEstim 貝氏法：僅有傳播週次，學術主流，Rt 中位數（1.42）
+
+**假設前提與限制**
+- 世代間隔固定為 14 天，實際上有個體差異（SD ≈ 4 天）
+- Wallinga 法為近似估計，不考慮右截斷偏誤（right truncation bias）
+- Rt > 1 表示疫情擴散，但不代表一定爆發，需結合病例絕對數判斷
+
+**文獻支持**
+- Cori et al. (2013) American Journal of Epidemiology — EpiEstim 貝氏 Rt 估計方法，DOI: 10.1093/aje/kwt133
+- Wallinga & Lipsitch (2007) Proc Royal Society B — Rt 近似估計公式，DOI: 10.1098/rspb.2006.3754
+- Nishiura & Halstead (2007) JID — 登革熱世代間隔 14 天，DOI: 10.1086/511825
+            """)
 
 st.divider()
 
@@ -641,3 +696,448 @@ with tab3:
         st.plotly_chart(figC, use_container_width=True)
     else:
         st.info('💡 選擇特定縣市可查看 BI 與病例的時序對比圖')
+
+    st.divider()
+    with st.expander('📋 方法論'):
+        st.markdown("""
+**資料來源**
+- 疾病管制署病媒蚊密度調查資料（MosIndex_All.csv）：布氏指數（BI）與埃及斑蚊指數（HIAeg）
+- 疾管署登革熱確定病例（Dengue_Daily.csv）：依縣市聚合為月別病例數
+
+**布氏指數（Breteau Index, BI）說明**
+- 定義：每 100 戶中有孑孓孳生容器的數量
+- BI ≥ 20：高度警戒，爆發風險顯著上升
+- BI < 5：相對安全，但仍需持續監測
+
+**分析方法**
+- Pearson 相關係數（r）：衡量各縣市月均 BI 與月病例數的線性相關強度
+- 縣市層級分析：整體 r 值接近零（生態謬誤），縣市層級才能呈現有意義的相關性
+- 感控介入效應：高爆發縣市（如台南市）因政府介入壓低 BI，可能出現負相關，為感控成效的正向指標
+
+**生態謬誤（Ecological Fallacy）說明**
+- 整體 Pearson r ≈ 0 並非代表 BI 與病例無關
+- 需在縣市層級分析才能正確評估 BI 與病例的關聯性
+- 此現象已有文獻記載，為區域性流行病學分析的常見限制
+
+**文獻支持**
+- Focks et al. (2000) Am J Trop Med Hyg — BI 與登革熱傳播閾值，25°C 下 BI ≥ 5 即具傳播風險
+- Brady et al. (2014) PLOS NTD — 病媒蚊密度指標與登革熱爆發風險評估，DOI: 10.1371/journal.pntd.0002450
+- Tien et al. (2018) PLOS ONE — 高雄市登革熱與病媒蚊、氣象因子的綜合分析，DOI: 10.1371/journal.pone.0190637
+        """)
+        # ============================================================
+#  TAB4：氣象分析模組
+#  整合方式：將此程式碼加入 dashboard.py
+#
+#  修改步驟：
+#  1. 找到這一行：
+#     tab1, tab2, tab3 = st.tabs([...])
+#     改為：
+#     tab1, tab2, tab3, tab4 = st.tabs(['📈 病例數模擬', '🔴 R 值分析', '🦟 布氏指數分析', '🌡️ 氣象分析'])
+#
+#  2. 在 dashboard.py 最底部（tab3 的 with 區塊結束後）
+#     貼上以下所有程式碼
+# ============================================================
+
+# ── Tab 4：氣象分析 ──────────────────────────────────────────
+# ============================================================
+#  TAB4 v2：氣象分析（感控師版）
+#  資料：CODiS 逐年月資料（weather_monthly_codis.csv）
+#  整合：把 dashboard.py 最底部的 with tab4: 整段換成這個
+# ============================================================
+
+with tab4:
+    st.subheader('🌡️ 氣象因子 × 登革熱病例相關分析')
+    st.caption('資料來源：中央氣象署 CODiS（2010~2026）｜台南／高雄／嘉義／屏東四測站')
+
+    import os
+    from scipy import stats as sp_stats
+
+    WEATHER_PATH = 'data/weather_monthly_codis.csv'
+
+    CITY_NAME_MAP = {
+        '台南市': '台南（467410）',
+        '高雄市': '高雄（467440/467441）',
+        '嘉義市': '嘉義（467480）',
+        '屏東縣': '恆春（467590，代表屏東）',
+    }
+
+    if not os.path.exists(WEATHER_PATH):
+        st.error('❌ 找不到 data/weather_monthly_codis.csv，請確認檔案已放入 data/ 資料夾')
+        st.stop()
+
+    @st.cache_data(show_spinner=False)
+    def load_weather():
+        df = pd.read_csv(WEATHER_PATH, encoding='utf-8-sig')
+        df = df.dropna(subset=['temp_mean', 'rain_sum'])
+        return df
+
+    weather_df = load_weather()
+    w_yr_min = int(weather_df['year'].min())
+    w_yr_max = int(weather_df['year'].max())
+
+    @st.cache_data(show_spinner=False)
+    def get_dengue_monthly_v2(data_key: str) -> pd.DataFrame:
+        df = st.session_state.get('raw_df_for_weather')
+        if df is None:
+            return pd.DataFrame()
+        df2 = df.copy()
+        df2['發病日'] = pd.to_datetime(df2['發病日'], errors='coerce')
+        df2 = df2.dropna(subset=['發病日'])
+        df2['year']  = df2['發病日'].dt.year
+        df2['month'] = df2['發病日'].dt.month
+        df2['確定病例數'] = pd.to_numeric(df2['確定病例數'], errors='coerce').fillna(0)
+        if '是否境外移入' in df2.columns:
+            df2 = df2[df2['是否境外移入'] == '否']
+        county_col = None
+        for c in ['居住縣市', '縣市', 'County']:
+            if c in df2.columns:
+                county_col = c
+                break
+        if county_col:
+            monthly = (df2.groupby(['year', 'month', county_col])['確定病例數']
+                          .sum().reset_index()
+                          .rename(columns={county_col: 'County', '確定病例數': 'cases'}))
+        else:
+            monthly = (df2.groupby(['year', 'month'])['確定病例數']
+                          .sum().reset_index()
+                          .rename(columns={'確定病例數': 'cases'}))
+            monthly['County'] = '全台'
+        return monthly[monthly['year'] >= 2010]
+
+    if df_raw is not None:
+        st.session_state['raw_df_for_weather'] = df_raw
+
+    dengue_monthly = get_dengue_monthly_v2(data_key)
+
+    # ── ① 感控重點卡片（修正版）────────────────────────────────
+    st.markdown('#### 🔑 感控重點：登革熱三角傳播鏈')
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.info(
+            '**☀️ 高溫（>25°C）**\n\n'
+            '氣溫升高加速病媒蚊（埃及斑蚊）\n'
+            '發育與叮咬頻率，病毒外潛伏期縮短\n\n'
+            '**→ 登革熱傳播效率顯著提升**'
+        )
+    with c2:
+        st.info(
+            '**🌧️ 降雨（積水孳生）**\n\n'
+            '降雨後積水容器成為孑孓孳生源，\n'
+            '約 2~4 週後羽化為成蚊\n\n'
+            '**→ 病媒蚊密度暴增，傳播風險升高**'
+        )
+    with c3:
+        st.info(
+            '**⏱️ 高峰滯後 1~2 個月**\n\n'
+            '氣溫高峰（7~8月）後，\n'
+            '病媒蚊孵化→叮咬→人體發病\n\n'
+            '**→ 病例高峰落在 9~10 月**'
+        )
+
+    st.divider()
+
+    # ── ② 縣市 & 年份選擇 ───────────────────────────────────────
+    col_sel1, col_sel2 = st.columns([1, 1])
+    with col_sel1:
+        selected_city = st.selectbox(
+            '選擇縣市',
+            options=list(CITY_NAME_MAP.keys()),
+            index=0,
+            format_func=lambda x: CITY_NAME_MAP[x]
+        )
+    with col_sel2:
+        available_years = sorted(weather_df['year'].unique(), reverse=True)
+        selected_year = st.selectbox(
+            '選擇年份（單年詳細分析）',
+            options=[f'全期（{w_yr_min}~{w_yr_max}）'] + [str(y) for y in available_years],
+            index=0
+        )
+
+    # ── 準備資料 ─────────────────────────────────────────────────
+    w_city = weather_df[weather_df['County'] == selected_city].copy()
+
+    if 'County' in dengue_monthly.columns and selected_city in dengue_monthly['County'].values:
+        d_city = dengue_monthly[dengue_monthly['County'] == selected_city].copy()
+    else:
+        d_city = dengue_monthly.groupby(['year', 'month'])['cases'].sum().reset_index()
+
+    merged = pd.merge(d_city, w_city[['year', 'month', 'temp_mean', 'rain_sum']],
+                      on=['year', 'month'], how='inner').dropna()
+    merged['date'] = pd.to_datetime(merged[['year', 'month']].assign(day=1))
+    merged = merged.sort_values('date').reset_index(drop=True)
+
+    is_full_period = selected_year.startswith('全期')
+    if not is_full_period:
+        yr = int(selected_year)
+        merged_view = merged[merged['year'] == yr].copy()
+        period_label = f'{selected_year} 年'
+    else:
+        merged_view = merged.copy()
+        period_label = f'全期（{w_yr_min}~{w_yr_max}）'
+
+    # ── ③ 主視覺：雙軸時序圖 ────────────────────────────────────
+    st.markdown(f'#### 📊 {selected_city}：氣溫 × 病例數時序對比（{period_label}）')
+
+    if merged_view.empty:
+        st.warning('此年份或縣市無資料')
+    else:
+        month_labels = ['1月','2月','3月','4月','5月','6月',
+                        '7月','8月','9月','10月','11月','12月']
+
+        fig_main = make_subplots(specs=[[{"secondary_y": True}]])
+
+        fig_main.add_trace(go.Bar(
+            x=merged_view['date'],
+            y=merged_view['cases'],
+            name='月病例數',
+            marker_color='rgba(216,90,48,0.6)',
+            hovertemplate='%{x|%Y年%m月}<br>病例數：%{y:,.0f} 例<extra></extra>',
+        ), secondary_y=False)
+
+        fig_main.add_trace(go.Scatter(
+            x=merged_view['date'],
+            y=merged_view['temp_mean'],
+            name='月均溫（°C）',
+            line=dict(color='#D85A30', width=3),
+            mode='lines+markers',
+            marker=dict(size=6),
+            hovertemplate='%{x|%Y年%m月}<br>月均溫：%{y:.1f}°C<extra></extra>',
+        ), secondary_y=True)
+
+        fig_main.add_hline(
+            y=25, line_dash='dot', line_color='#D85A30',
+            line_width=1.5, secondary_y=True,
+            annotation_text='25°C（病媒蚊活躍閾值）',
+            annotation_position='top right'
+        )
+
+        fig_main.update_layout(
+            height=400,
+            plot_bgcolor='white', paper_bgcolor='white',
+            legend=dict(orientation='h', y=1.08, x=0),
+            hovermode='x unified',
+            title_text=f'{selected_city} {period_label} ｜ 月均溫（紅線）與月病例數（橘柱）對比',
+            title_font_size=13,
+        )
+        fig_main.update_yaxes(
+            title_text='月病例數（例）', secondary_y=False,
+            gridcolor='#F0F0F0'
+        )
+        fig_main.update_yaxes(
+            title_text='月均溫（°C）', secondary_y=True,
+            range=[10, 38]
+        )
+        fig_main.update_xaxes(gridcolor='#F0F0F0')
+        st.plotly_chart(fig_main, use_container_width=True)
+
+        if not is_full_period:
+            yr_cases  = int(merged_view['cases'].sum())
+            peak_m    = int(merged_view.loc[merged_view['cases'].idxmax(), 'month'])
+            peak_t_m  = int(merged_view.loc[merged_view['temp_mean'].idxmax(), 'month'])
+            lag_m     = (peak_m - peak_t_m) % 12
+            st.success(
+                f'📌 **{selected_year} 年快速解讀**：'
+                f'全年本土病例合計 **{yr_cases:,} 例**。'
+                f'氣溫高峰在 **{peak_t_m} 月**（{merged_view.loc[merged_view["temp_mean"].idxmax(), "temp_mean"]:.1f}°C），'
+                f'病例高峰在 **{peak_m} 月**，兩者相差 **{lag_m} 個月**，'
+                f'符合病媒蚊孵化→成蚊→叮咬→發病的生物延遲週期（文獻：Tien et al., 2018）。'
+            )
+        else:
+            st.info(
+                f'💡 選擇特定年份（如 2015 年）可查看單年氣溫與病例的詳細對比，'
+                f'並自動計算滯後月數。'
+            )
+
+    st.divider()
+
+    # ── ④ 季節性分析（明確標示年份範圍）──────────────────────
+    d_yr_min = int(merged['year'].min())
+    d_yr_max = int(merged['year'].max())
+    st.markdown(
+        f'#### 🕐 {selected_city}：月均值季節性分析'
+        f'（{d_yr_min}~{d_yr_max} 年，共 {d_yr_max - d_yr_min + 1} 年平均）'
+    )
+    st.caption(
+        f'以 {d_yr_min}~{d_yr_max} 年共 **{d_yr_max - d_yr_min + 1} 年** 實際逐月資料，'
+        f'計算各月平均值，消除年際變異後呈現季節性規律。'
+        f'樣本數：每月約 {d_yr_max - d_yr_min + 1} 個觀測值。'
+    )
+
+    seasonal = merged.groupby('month').agg(
+        cases_mean=('cases', 'mean'),
+        temp_mean_=('temp_mean', 'mean'),
+        rain_mean=('rain_sum', 'mean'),
+    ).reset_index()
+
+    peak_m = int(seasonal.loc[seasonal['cases_mean'].idxmax(), 'month'])
+    temp_peak = int(seasonal.loc[seasonal['temp_mean_'].idxmax(), 'month'])
+    lag_season = (peak_m - temp_peak) % 12
+
+    col_s1, col_s2 = st.columns(2)
+
+    with col_s1:
+        bar_colors = []
+        for m in seasonal['month']:
+            if m == peak_m:
+                bar_colors.append('#D85A30')
+            elif abs(m - peak_m) <= 1 or abs(m - peak_m) >= 11:
+                bar_colors.append('#BA7517')
+            else:
+                bar_colors.append('#1D9E75')
+
+        fig_season = go.Figure(go.Bar(
+            x=[month_labels[m-1] for m in seasonal['month']],
+            y=seasonal['cases_mean'].round(1),
+            marker_color=bar_colors,
+            text=[f'{v:.0f}' if v > seasonal['cases_mean'].mean() else ''
+                  for v in seasonal['cases_mean']],
+            textposition='outside',
+            hovertemplate='%{x}<br>月均病例：%{y:.1f} 例<extra></extra>',
+        ))
+        fig_season.update_layout(
+            height=340,
+            title_text=f'月均病例數（{d_yr_min}~{d_yr_max} 年平均｜高峰月=橘紅）',
+            plot_bgcolor='white', paper_bgcolor='white',
+            xaxis_title='月份', yaxis_title='月均病例數（例）',
+            margin=dict(t=50, b=40),
+        )
+        st.plotly_chart(fig_season, use_container_width=True)
+
+    with col_s2:
+        cases_norm = (seasonal['cases_mean'] / seasonal['cases_mean'].max() * 100)
+        temp_norm  = (seasonal['temp_mean_'] / seasonal['temp_mean_'].max() * 100)
+
+        fig_dual = go.Figure()
+        fig_dual.add_trace(go.Scatter(
+            x=[month_labels[m-1] for m in seasonal['month']],
+            y=temp_norm.round(1),
+            name='月均溫（標準化）',
+            line=dict(color='#D85A30', width=3),
+            mode='lines+markers',
+            marker=dict(size=8, symbol='circle'),
+        ))
+        fig_dual.add_trace(go.Scatter(
+            x=[month_labels[m-1] for m in seasonal['month']],
+            y=cases_norm.round(1),
+            name='月均病例（標準化）',
+            line=dict(color='#378ADD', width=3, dash='dash'),
+            mode='lines+markers',
+            marker=dict(size=8, symbol='diamond'),
+        ))
+        fig_dual.add_annotation(
+            x=month_labels[temp_peak-1], y=102,
+            text=f'氣溫高峰<br>{temp_peak}月',
+            showarrow=True, arrowhead=2, arrowcolor='#D85A30',
+            font=dict(color='#D85A30', size=11), ax=0, ay=-45
+        )
+        fig_dual.add_annotation(
+            x=month_labels[peak_m-1], y=float(cases_norm.max()) + 5,
+            text=f'病例高峰<br>{peak_m}月',
+            showarrow=True, arrowhead=2, arrowcolor='#378ADD',
+            font=dict(color='#378ADD', size=11), ax=0, ay=-45
+        )
+        fig_dual.update_layout(
+            height=340,
+            title_text=f'氣溫 vs 病例 季節趨勢對比（標準化，{d_yr_min}~{d_yr_max}）',
+            plot_bgcolor='white', paper_bgcolor='white',
+            xaxis_title='月份', yaxis_title='相對強度（%，最高月=100%）',
+            legend=dict(orientation='h', y=1.12),
+            margin=dict(t=60, b=40),
+        )
+        st.plotly_chart(fig_dual, use_container_width=True)
+
+    st.caption(
+        f'💡 **感控解讀**：{selected_city} 氣溫高峰（{temp_peak} 月）與病例高峰（{peak_m} 月）'
+        f'相差 **{lag_season} 個月**，反映病媒蚊由孑孓孵化→羽化成蚊→叮咬人體→發病通報的完整生物延遲。'
+        f'感控人員應於 **{temp_peak} 月起** 加強孳生源清除，以在病例高峰前完成防治部署。'
+    )
+
+    st.divider()
+
+    # ── ⑤ Pearson 相關係數表 ────────────────────────────────────
+    st.markdown(f'#### 📐 各縣市 Pearson 相關係數（逐年月資料，{w_yr_min}~{w_yr_max}）')
+
+    corr_rows = []
+    for city in ['台南市', '高雄市', '嘉義市', '屏東縣']:
+        w = weather_df[weather_df['County'] == city]
+        if 'County' in dengue_monthly.columns and city in dengue_monthly['County'].values:
+            d = dengue_monthly[dengue_monthly['County'] == city]
+        else:
+            d = dengue_monthly.groupby(['year','month'])['cases'].sum().reset_index()
+        m = pd.merge(d, w[['year','month','temp_mean','rain_sum']],
+                     on=['year','month'], how='inner').dropna()
+        if len(m) < 6:
+            continue
+        r_t, p_t = sp_stats.pearsonr(m['temp_mean'], m['cases'])
+        r_r, p_r = sp_stats.pearsonr(m['rain_sum'],  m['cases'])
+        corr_rows.append({
+            '縣市':        city,
+            '氣溫 r':      round(r_t, 3),
+            '氣溫 p 值':   round(p_t, 4),
+            '氣溫顯著':    '✅ 顯著' if p_t < 0.05 else '—',
+            '降雨 r':      round(r_r, 3),
+            '降雨 p 值':   round(p_r, 4),
+            '降雨顯著':    '✅ 顯著' if p_r < 0.05 else '—',
+            '樣本數（月）': len(m),
+        })
+
+    if corr_rows:
+        corr_table = pd.DataFrame(corr_rows)
+        st.dataframe(corr_table, use_container_width=True, hide_index=True)
+        st.caption(
+            f'使用 {w_yr_min}~{w_yr_max} 年**逐年月**實際資料（非月均值），'
+            f'樣本數為各縣市實際有資料的月份筆數。'
+            f'**解讀**：|r| > 0.3 弱相關，|r| > 0.5 中等相關，|r| > 0.7 強相關。'
+            f'p < 0.05 表示統計上顯著（✅）。'
+        )
+
+    st.divider()
+
+    # ── ⑥ 方法論（更新文獻）────────────────────────────────────
+    with st.expander('📋 方法論'):
+        st.markdown(f'''
+**資料來源**
+- 氣象：中央氣象署 CODiS 逐月資料（{w_yr_min}~{w_yr_max}），TX01 月均溫（°C）、PP01 月降水量（mm）
+- 病例：疾管署 Dengue_Daily.csv 本土確定病例，依縣市聚合為月別資料
+
+**測站對照表**
+
+| 縣市 | 測站代號 | 測站名稱 | 備註 |
+|---|---|---|---|
+| 台南市 | 467410 | 臺南 | 局屬有人站 |
+| 高雄市 | 467440 / 467441 | 高雄 | 兩站資料平均 |
+| 嘉義市 | 467480 | 嘉義 | 局屬有人站 |
+| 屏東縣 | 467590 | 恆春 | 屏東縣無局屬站，以南屏東恆春站代替 |
+
+**分析方法**
+- **Pearson 相關係數（r）**：使用 {w_yr_min}~{w_yr_max} 年逐年月資料（非月均值），衡量氣象因子與病例數的線性相關強度
+- **季節性分析**：計算全期各月均值，消除年際變異，突顯氣溫 vs 病例的相位差（滯後效應）
+- **滯後效應**：降雨影響孑孓孳生，需 2~4 週羽化為成蚊後才能傳播；氣溫影響病毒外潛伏期（EIP），25°C 以上 EIP 顯著縮短
+
+**相關文獻**
+
+1. **Tien et al. (2018)** *PLOS ONE* — 高雄市登革熱與氣象因子（氣溫、降雨、相對濕度）在滯後 **1~2 個月**時呈現顯著正相關，並建立預測模型
+   > DOI: 10.1371/journal.pone.0190637
+
+2. **Hii et al. (2012)** *PLOS NTD* — 新加坡研究，氣溫與登革熱病例 r ≈ 0.4~0.6，最佳預測滯後為 **1~3 個月**
+   > DOI: 10.1371/journal.pntd.0001908
+
+3. **Chien & Yu (2014)** *Environment International* — 台灣本土研究，氣象因子對登革熱發生率時空分布的影響
+   > DOI: 10.1016/j.envint.2014.08.003
+
+4. **Nishiura & Halstead (2007)** *JID* — 登革熱自然史，世代間隔 14 天，支持滯後效應的生物學基礎
+   > DOI: 10.1086/511825
+
+**感控實務意涵**
+
+氣溫超過 **25°C**（病媒蚊活躍閾值）後 1~2 個月為高風險期，感控人員應：
+1. 加強孳生源清除（積水容器、廢棄輪胎、花盆底盤）
+2. 啟動社區噴藥防治計畫
+3. 醫院備齊登革熱檢驗試劑與隔離資源
+4. 加強民眾衛教：避免清晨黃昏戶外活動
+        ''')
+
+    st.caption(
+        f'🦟 台灣 CDC 登革熱蒙地卡羅模擬系統 ｜ 課程：系統模擬 ｜ 作者：Joyce Wang ｜ '
+        f'病例資料更新：{latest_date} ｜ 氣象資料：CWA CODiS {w_yr_min}~{w_yr_max}'
+    )
