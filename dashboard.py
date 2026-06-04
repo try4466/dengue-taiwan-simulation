@@ -720,9 +720,9 @@ with tab3:
 - 此現象已有文獻記載，為區域性流行病學分析的常見限制
 
 **文獻支持**
-- Focks et al. (2000) Am J Trop Med Hyg — BI 與登革熱傳播閾值，25°C 下 BI ≥ 5 即具傳播風險
-- Brady et al. (2014) PLOS NTD — 病媒蚊密度指標與登革熱爆發風險評估，DOI: 10.1371/journal.pntd.0002450
-- Tien et al. (2018) PLOS ONE — 高雄市登革熱與病媒蚊、氣象因子的綜合分析，DOI: 10.1371/journal.pone.0190637
+- Bowman et al. (2014) PLOS NTD — 系統性回顧病媒蚊指數與登革熱傳播關係，DOI: 10.1371/journal.pntd.0002848
+- Brady et al. (2012) PLOS NTD — 全球登革熱傳播空間分布精緻化研究，DOI: 10.1371/journal.pntd.0001760
+- Chang et al. (2018) PLOS ONE — 高雄市登革熱與病媒蚊、氣象因子的綜合分析，DOI: 10.1371/journal.pone.0190637
         """)
         # ============================================================
 #  TAB4：氣象分析模組
@@ -1554,6 +1554,6 @@ with tab5:
 
     st.caption(
         f'🔮 Bayesian 滾動視窗驗證（{method_label}）｜'
-        f'訓練期：2003~2022 ｜ 驗證期：2015~2023 ｜'
+        f'訓練期：2003~2022  |  驗證期：2015~2023  | '
         f'資料更新：{latest_date}'
     )
