@@ -1357,6 +1357,158 @@ with tab5:
 
     st.divider()
 
+    # ── 動態互動式 Bayesian 預測 ────────────────────────────
+    st.divider()
+    st.markdown('#### 🎛️ 動態 Bayesian 預測（即時運算）')
+    st.caption('拖動滑桿選擇訓練期，系統即時進行貝氏更新並預測下一年病例數')
+
+    # 取得可用年份
+    wdf_bay = st.session_state.get('weekly_df')
+    if wdf_bay is not None:
+        annual_bay = wdf_bay.groupby('year')['cases'].sum()
+        available_train_end = [y for y in range(2010, 2026)
+                               if y in annual_bay.index and y+1 in annual_bay.index]
+
+        if available_train_end:
+            # 滑桿：選擇訓練結束年份
+            train_end_year = st.slider(
+                '訓練期結束年份',
+                min_value=int(min(available_train_end)),
+                max_value=int(max(available_train_end)),
+                value=2022,
+                step=1,
+                help='向左拖動可模擬更早期的預測，向右拖動可使用更多訓練資料'
+            )
+            pred_target_year = train_end_year + 1
+
+            # 即時 Bayesian 更新（共軛先驗）
+            train_data = annual_bay[annual_bay.index <= train_end_year].values
+            log_data = np.log(train_data[train_data > 0].astype(float))
+
+            mu_post  = float(np.mean(log_data))
+            sig_post = float(np.std(log_data, ddof=1))
+
+            np.random.seed(42)
+            sim_log   = np.random.normal(mu_post, sig_post, 20000)
+            sim_cases = np.exp(sim_log)
+            sim_cases = sim_cases[sim_cases < np.percentile(sim_cases, 99.9)]
+
+            pred_median = float(np.median(sim_cases))
+            pred_ci_lo  = float(np.percentile(sim_cases, 2.5))
+            pred_ci_hi  = float(np.percentile(sim_cases, 97.5))
+
+            # 實際值（若已有資料）
+            actual_val = annual_bay.get(pred_target_year, None)
+
+            # 摘要卡片
+            col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+            col_d1.metric('訓練期', f'2003~{train_end_year}',
+                          help=f'使用 {len(log_data)} 年資料進行貝氏更新')
+            col_d2.metric(f'{pred_target_year} 年預測中位數',
+                          f'{pred_median:,.0f} 例')
+            col_d3.metric('95% 預測區間',
+                          f'{pred_ci_lo:,.0f} ~ {pred_ci_hi:,.0f}')
+            if actual_val is not None:
+                covered = pred_ci_lo <= actual_val <= pred_ci_hi
+                col_d4.metric(
+                    f'{pred_target_year} 年實際',
+                    f'{int(actual_val):,} 例',
+                    delta='✅ CI 內' if covered else '❌ CI 外',
+                    delta_color='normal' if covered else 'inverse'
+                )
+            else:
+                col_d4.metric(f'{pred_target_year} 年實際', '尚無資料')
+
+            # 預測分佈圖
+            fig_dyn = go.Figure()
+
+            # 模擬分佈直方圖
+            fig_dyn.add_trace(go.Histogram(
+                x=sim_cases,
+                nbinsx=80,
+                marker_color='rgba(55,138,221,0.6)',
+                name='預測分佈（20,000次模擬）',
+                hovertemplate='病例數：%{x:,.0f}<br>頻率：%{y}<extra></extra>',
+            ))
+
+            # 中位數線
+            fig_dyn.add_vline(
+                x=pred_median, line_color='#D85A30', line_width=2.5,
+                annotation_text=f'中位數 {pred_median:,.0f}',
+                annotation_position='top right',
+            )
+
+            # 95% CI 線
+            fig_dyn.add_vline(
+                x=pred_ci_lo, line_dash='dash', line_color='#888780',
+                annotation_text=f'CI下限 {pred_ci_lo:,.0f}',
+                annotation_position='top left',
+            )
+            fig_dyn.add_vline(
+                x=pred_ci_hi, line_dash='dash', line_color='#888780',
+                annotation_text=f'CI上限 {pred_ci_hi:,.0f}',
+                annotation_position='top right',
+            )
+
+            # 實際值線（若有）
+            if actual_val is not None:
+                fig_dyn.add_vline(
+                    x=actual_val,
+                    line_color='#1D9E75', line_width=3,
+                    annotation_text=f'實際 {int(actual_val):,}',
+                    annotation_position='top left',
+                )
+
+            fig_dyn.update_layout(
+                height=380,
+                plot_bgcolor='white', paper_bgcolor='white',
+                title_text=(
+                    f'Bayesian 預測分佈｜訓練期 2003~{train_end_year}'
+                    f'→ 預測 {pred_target_year} 年｜'
+                    f'後驗：μ={mu_post:.2f}，σ={sig_post:.2f}'
+                ),
+                title_font_size=12,
+                xaxis_title=f'{pred_target_year} 年預測病例數（例）',
+                yaxis_title='模擬次數',
+                showlegend=False,
+            )
+            fig_dyn.update_xaxes(gridcolor='#F0F0F0')
+            fig_dyn.update_yaxes(gridcolor='#F0F0F0')
+            st.plotly_chart(fig_dyn, use_container_width=True)
+
+            # 歷史訓練資料趨勢
+            st.markdown(f'**訓練期資料（2003~{train_end_year}）**')
+            hist_show = annual_bay[annual_bay.index <= train_end_year].reset_index()
+            hist_show.columns = ['year', 'cases']
+
+            fig_hist = go.Figure()
+            fig_hist.add_trace(go.Bar(
+                x=hist_show['year'].astype(str),
+                y=hist_show['cases'],
+                marker_color=['#D85A30' if v == hist_show['cases'].max()
+                              else '#378ADD' for v in hist_show['cases']],
+                hovertemplate='%{x} 年<br>病例數：%{y:,.0f} 例<extra></extra>',
+            ))
+            fig_hist.add_hline(
+                y=pred_median, line_dash='dash', line_color='#D85A30',
+                annotation_text=f'預測中位數 {pred_median:,.0f}',
+            )
+            fig_hist.update_layout(
+                height=280,
+                plot_bgcolor='white', paper_bgcolor='white',
+                xaxis_title='年份', yaxis_title='年度病例數（例）',
+                xaxis_tickangle=45,
+                margin=dict(t=20, b=40),
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+            st.caption(
+                f'💡 **感控應用**：若目前為 {train_end_year} 年底，'
+                f'Bayesian 模型預測 {pred_target_year} 年病例中位數為 **{pred_median:,.0f} 例**，'
+                f'95% CI 為 {pred_ci_lo:,.0f}~{pred_ci_hi:,.0f} 例。'
+                f'感控人員可據此提前規劃資源配置。'
+            )
+
     # ── 方法論 ──────────────────────────────────────────────
     with st.expander('📋 方法論'):
         st.markdown(f"""
@@ -1372,12 +1524,12 @@ with tab5:
 
 *滾動視窗設計（Walk-Forward Validation）*
 - 第 1 輪：訓練 2003~2014，預測 2015（最重要驗證點）
-- 第 2~8 輪：逐年延伸，預測 2016~2023
+- 第 2\~8 輪：逐年延伸，預測 2016\~2023
 - 共 {n_rounds} 個驗證點（2021 年因 COVID 管制病例數極低，特殊處理）
 
 *評估指標*
 - **RMSE = {rmse:,.0f} 例**：主要受 2015 年（43,784 例）和 2023 年（26,429 例）大爆發影響
-- **Coverage = {coverage_rate:.1f}%**：CI 寬度反映歷史病例數的高度變異（2021 年僅 12 例 vs 2015 年 43,784 例）
+- **Coverage = {coverage_rate:.1f}%**：CI 寬度反映歷史病例數的高度變異（2021 年因 COVID 管制無本土病例，2015 年高達 43,784 例）
 - **Divergences = 0**：MCMC 收斂良好，無發散樣本
 
 *Coverage 偏低的合理解釋*
@@ -1402,6 +1554,6 @@ with tab5:
 
     st.caption(
         f'🔮 Bayesian 滾動視窗驗證（{method_label}）｜'
-        f'訓練期：2003~2022｜驗證期：2015~2023｜'
+        f'訓練期：2003~2022 ｜ 驗證期：2015~2023 ｜'
         f'資料更新：{latest_date}'
     )
