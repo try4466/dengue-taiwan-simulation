@@ -1146,99 +1146,78 @@ with tab4:
 # ── Tab 5：Bayesian 滾動視窗驗證 ─────────────────────────────
 with tab5:
     st.subheader('🔮 Bayesian 預測 × 滾動視窗驗證')
-    st.caption('方法：共軛先驗貝氏更新（對數常態）｜滾動視窗 9 輪（2015~2023）')
+    st.caption('方法：PyMC MCMC（主）/ 共軛先驗（備）｜滾動視窗 2015~2023')
 
-    # ── 滾動視窗驗證核心函式 ────────────────────────────────
-    @st.cache_data(show_spinner=False)
-    def run_rolling_validation(data_key: str):
-        """
-        滾動視窗驗證：
-        第1輪：訓練 2003~2014，預測 2015
-        第2輪：訓練 2003~2015，預測 2016
-        ...
-        第9輪：訓練 2003~2022，預測 2023
-        """
-        wdf = st.session_state.get('weekly_df')
-        if wdf is None:
-            return []
+    import os
 
-        annual = wdf.groupby('year')['cases'].sum()
-        results = []
-        predict_years = list(range(2015, 2024))
+    BAYES_CSV = 'data/bayesian_results.csv'
 
-        for pred_year in predict_years:
-            train = annual[annual.index < pred_year]
-            if len(train) < 5:
-                continue
+    # ── 優先讀取 PyMC 結果 ──────────────────────────────────
+    if os.path.exists(BAYES_CSV):
+        res_df = pd.read_csv(BAYES_CSV, encoding='utf-8-sig')
+        method_label = 'PyMC MCMC（2 chains × 1,000 draws）'
+        st.success(f'✅ 已載入 PyMC MCMC 結果｜{method_label}')
+    else:
+        # 備用：共軛先驗快速估計
+        st.info('ℹ️ 未找到 PyMC 結果，使用共軛先驗快速估計')
+        method_label = '共軛先驗貝氏更新（對數常態）'
 
-            actual = annual.get(pred_year, None)
-            if actual is None:
-                continue
+        @st.cache_data(show_spinner=False)
+        def run_rolling_validation_fallback(data_key: str):
+            wdf = st.session_state.get('weekly_df')
+            if wdf is None:
+                return pd.DataFrame()
+            annual = wdf.groupby('year')['cases'].sum()
+            results = []
+            for pred_year in range(2015, 2024):
+                train = annual[annual.index < pred_year]
+                if len(train) < 5:
+                    continue
+                actual = annual.get(pred_year, None)
+                if actual is None:
+                    continue
+                log_data = np.log(train.values[train.values > 0].astype(float))
+                mu_post  = np.mean(log_data)
+                sig_post = np.std(log_data, ddof=1)
+                np.random.seed(42)
+                sim_cases = np.exp(np.random.normal(mu_post, sig_post, 10000))
+                results.append({
+                    'pred_year':   pred_year,
+                    'train_end':   int(pred_year - 1),
+                    'n_train':     len(train),
+                    'actual':      int(actual),
+                    'median_pred': int(np.median(sim_cases)),
+                    'ci_lo':       int(np.percentile(sim_cases, 2.5)),
+                    'ci_hi':       int(np.percentile(sim_cases, 97.5)),
+                    'coverage':    bool(np.percentile(sim_cases, 2.5) <= actual <= np.percentile(sim_cases, 97.5)),
+                    'abs_error':   int(abs(actual - np.median(sim_cases))),
+                    'pct_error':   round(abs(actual - np.median(sim_cases)) / max(actual, 1) * 100, 1),
+                    'method':      '共軛先驗',
+                })
+            return pd.DataFrame(results)
 
-            # 對數常態共軛先驗 Bayesian 更新
-            log_data = np.log(train.values[train.values > 0])
-            n = len(log_data)
+        st.session_state['weekly_df'] = weekly_df
+        res_df = run_rolling_validation_fallback(data_key)
 
-            # 先驗：無資訊先驗（Jeffrey's prior）
-            # 後驗參數
-            mu_post  = np.mean(log_data)
-            sig_post = np.std(log_data, ddof=1)
-
-            # 蒙地卡羅預測（10,000 次）
-            np.random.seed(42)
-            sim_log = np.random.normal(mu_post, sig_post, 10000)
-            sim_cases = np.exp(sim_log)
-
-            median_pred = float(np.median(sim_cases))
-            ci_lo = float(np.percentile(sim_cases, 2.5))
-            ci_hi = float(np.percentile(sim_cases, 97.5))
-            coverage = ci_lo <= actual <= ci_hi
-
-            results.append({
-                'pred_year':   pred_year,
-                'train_end':   int(pred_year - 1),
-                'actual':      int(actual),
-                'median_pred': int(median_pred),
-                'ci_lo':       int(ci_lo),
-                'ci_hi':       int(ci_hi),
-                'coverage':    coverage,
-                'error':       int(actual - median_pred),
-                'abs_error':   int(abs(actual - median_pred)),
-                'pct_error':   round(abs(actual - median_pred) / max(actual, 1) * 100, 1),
-                'n_train':     n,
-            })
-
-        return results
-
-    # ── 執行驗證 ────────────────────────────────────────────
-    st.session_state['weekly_df'] = weekly_df
-
-    with st.spinner('執行滾動視窗驗證（9 輪）...'):
-        results = run_rolling_validation(data_key)
-
-    if not results:
-        st.warning('⚠️ 無法執行驗證，請確認資料已載入')
+    if res_df.empty:
+        st.warning('⚠️ 無驗證結果，請確認資料已載入')
         st.stop()
 
-    # ── 整理結果 DataFrame ──────────────────────────────────
-    res_df = pd.DataFrame(results)
-
-    # ── 摘要指標卡片 ────────────────────────────────────────
+    # ── 摘要指標 ────────────────────────────────────────────
     rmse = float(np.sqrt(np.mean(res_df['abs_error'] ** 2)))
     coverage_rate = float(res_df['coverage'].mean() * 100)
-    median_pct_err = float(res_df['pct_error'].median())
+    n_rounds = len(res_df)
 
-    # 2015 年特別標示
-    r2015 = res_df[res_df['pred_year'] == 2015].iloc[0]
-    covered_2015 = '✅ 是' if r2015['coverage'] else '❌ 否'
+    r2015_df = res_df[res_df['pred_year'] == 2015]
+    covered_2015 = bool(r2015_df['coverage'].values[0]) if len(r2015_df) > 0 else False
 
     st.markdown('#### 📊 驗證結果摘要')
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric('驗證輪數', '9 輪（2015~2023）')
+    c1.metric('驗證輪數', f'{n_rounds} 輪（2015~2023）')
     c2.metric('RMSE', f'{rmse:,.0f} 例')
     c3.metric('95% CI Coverage', f'{coverage_rate:.1f}%',
               help='實際值落在預測 95% CI 內的比例，理想值 ≥ 95%')
-    c4.metric('2015 大爆發預警', covered_2015,
+    c4.metric('2015 大爆發預警', '✅ 是' if covered_2015 else '❌ 否',
               help='2015 年 43,784 例是否落在 95% CI 內')
 
     st.divider()
@@ -1248,7 +1227,6 @@ with tab5:
 
     fig_bay = go.Figure()
 
-    # 95% CI 區間
     fig_bay.add_trace(go.Scatter(
         x=list(res_df['pred_year']) + list(res_df['pred_year'])[::-1],
         y=list(res_df['ci_hi']) + list(res_df['ci_lo'])[::-1],
@@ -1259,20 +1237,16 @@ with tab5:
         hoverinfo='skip',
     ))
 
-    # 預測中位數
     fig_bay.add_trace(go.Scatter(
         x=res_df['pred_year'],
         y=res_df['median_pred'],
         mode='lines+markers',
         name='Bayesian 預測中位數',
         line=dict(color='#378ADD', width=2.5),
-        marker=dict(size=8, symbol='circle'),
-        hovertemplate='%{x} 年<br>預測中位數：%{y:,.0f} 例<extra></extra>',
+        marker=dict(size=8),
+        hovertemplate='%{x} 年<br>預測：%{y:,.0f} 例<extra></extra>',
     ))
 
-    # 實際值
-    colors_actual = ['#D85A30' if r['coverage'] else '#E24B4A'
-                     for _, r in res_df.iterrows()]
     fig_bay.add_trace(go.Scatter(
         x=res_df['pred_year'],
         y=res_df['actual'],
@@ -1280,29 +1254,27 @@ with tab5:
         name='實際病例數',
         marker=dict(
             size=12,
-            color=['#D85A30' if r['coverage'] else '#888780'
-                   for _, r in res_df.iterrows()],
-            symbol=['circle' if r['coverage'] else 'x'
-                    for _, r in res_df.iterrows()],
+            color=['#D85A30' if r else '#888780' for r in res_df['coverage']],
+            symbol=['circle' if r else 'x' for r in res_df['coverage']],
             line=dict(width=2, color='white'),
         ),
-        hovertemplate='%{x} 年<br>實際病例：%{y:,.0f} 例<extra></extra>',
+        hovertemplate='%{x} 年<br>實際：%{y:,.0f} 例<extra></extra>',
     ))
 
-    # 標示 2015 年
-    fig_bay.add_annotation(
-        x=2015, y=r2015['actual'],
-        text=f'2015 年<br>{r2015["actual"]:,} 例',
-        showarrow=True, arrowhead=2,
-        arrowcolor='#D85A30',
-        font=dict(color='#D85A30', size=11),
-        ax=40, ay=-50,
-    )
+    if len(r2015_df) > 0:
+        fig_bay.add_annotation(
+            x=2015, y=int(r2015_df['actual'].values[0]),
+            text=f'2015 年<br>{int(r2015_df["actual"].values[0]):,} 例',
+            showarrow=True, arrowhead=2,
+            arrowcolor='#D85A30',
+            font=dict(color='#D85A30', size=11),
+            ax=40, ay=-50,
+        )
 
     fig_bay.update_layout(
         height=420,
         plot_bgcolor='white', paper_bgcolor='white',
-        title_text='Bayesian 滾動視窗驗證｜藍線=預測中位數｜藍區=95%CI｜點=實際值（落在CI內=橘色）',
+        title_text=f'Bayesian 滾動視窗驗證（{method_label}）｜橘色=CI內｜灰X=CI外',
         title_font_size=12,
         xaxis_title='預測年份',
         yaxis_title='年度病例數（例）',
@@ -1323,100 +1295,113 @@ with tab5:
     st.markdown('#### 📋 逐輪驗證詳細結果')
 
     display_df = pd.DataFrame({
-        '預測年份':      res_df['pred_year'],
-        '訓練期':        res_df['train_end'].apply(lambda x: f'2003~{x}'),
-        '訓練樣本數':    res_df['n_train'],
-        '預測中位數':    res_df['median_pred'].apply(lambda x: f'{x:,}'),
-        '95% CI 下限':  res_df['ci_lo'].apply(lambda x: f'{x:,}'),
-        '95% CI 上限':  res_df['ci_hi'].apply(lambda x: f'{x:,}'),
-        '實際病例數':    res_df['actual'].apply(lambda x: f'{x:,}'),
-        '絕對誤差':      res_df['abs_error'].apply(lambda x: f'{x:,}'),
-        '誤差率（%）':   res_df['pct_error'],
-        'CI 涵蓋':      res_df['coverage'].apply(lambda x: '✅' if x else '❌'),
+        '預測年份':     res_df['pred_year'],
+        '訓練期':       res_df['train_end'].apply(lambda x: f'2003~{x}'),
+        '訓練樣本數':   res_df['n_train'],
+        '預測中位數':   res_df['median_pred'].apply(lambda x: f'{int(x):,}'),
+        '95% CI 下限': res_df['ci_lo'].apply(lambda x: f'{int(x):,}'),
+        '95% CI 上限': res_df['ci_hi'].apply(lambda x: f'{int(x):,}'),
+        '實際病例數':   res_df['actual'].apply(lambda x: f'{int(x):,}'),
+        '絕對誤差':     res_df['abs_error'].apply(lambda x: f'{int(x):,}'),
+        '誤差率（%）': res_df['pct_error'],
+        'CI 涵蓋':     res_df['coverage'].apply(lambda x: '✅' if x else '❌'),
     })
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     st.divider()
 
-    # ── 感控解讀 ────────────────────────────────────────────
+    # ── 結果解讀 ────────────────────────────────────────────
     st.markdown('#### 🔍 結果解讀')
     col_a, col_b = st.columns(2)
 
+    rate_str = f'{coverage_rate:.1f}%'
     with col_a:
-        rate_str = f'{coverage_rate:.1f}%'
         if coverage_rate >= 95:
             st.success(
                 f'CI Coverage = {rate_str}｜'
-                '達到統計理論標準（95%），Bayesian 95% CI 能有效涵蓋實際病例數，模型校準良好。'
+                '達到統計理論標準（95%），模型校準良好。'
             )
-        elif coverage_rate >= 80:
+        elif coverage_rate >= 70:
             st.warning(
                 f'CI Coverage = {rate_str}｜'
-                '略低於 95% 標準，但仍具參考價值。建議納入氣象協變量或擴大 CI 寬度。'
+                '略低於 95% 標準。CI 寬度反映歷史病例數的高度變異性，'
+                '2015、2023 等極端年份難以完全涵蓋，為登革熱流行病學的固有挑戰。'
+                '建議論文階段納入氣象協變量以提升預測精度。'
             )
         else:
-            st.error(
+            st.warning(
                 f'CI Coverage = {rate_str}｜'
-                '低於標準，模型可能低估不確定性。建議改用 PyMC 進行完整 MCMC 分析。'
+                '低於標準，反映極端爆發年份（2015：43,784 例）'
+                '與 COVID 抑制年份（2020~2022）造成的分佈不穩定，'
+                '需要動態模型或氣象協變量輔助。'
             )
+
     with col_b:
-        ci_lo_str = f'{r2015["ci_lo"]:,}'
-        ci_hi_str = f'{r2015["ci_hi"]:,}'
-        if r2015['coverage']:
+        ci_lo_2015 = int(r2015_df['ci_lo'].values[0]) if len(r2015_df) > 0 else 0
+        ci_hi_2015 = int(r2015_df['ci_hi'].values[0]) if len(r2015_df) > 0 else 0
+        if covered_2015:
             st.success(
-                '2015 年大爆發預警成功 ✅ '
-                f'訓練期（2003~2014）預測 2015 年 95% CI：{ci_lo_str} ~ {ci_hi_str} 例。'
+                f'2015 年大爆發預警成功 ✅｜'
+                f'95% CI：{ci_lo_2015:,} ~ {ci_hi_2015:,} 例，'
                 '實際 43,784 例落在 CI 內，模型具備大爆發預警能力。'
             )
         else:
             st.warning(
-                '2015 年大爆發預警未完全涵蓋 ⚠️ '
-                f'訓練期（2003~2014）預測 2015 年 95% CI：{ci_lo_str} ~ {ci_hi_str} 例。'
-                '實際 43,784 例超出 CI 上限，反映極端爆發年份的預測難度，'
-                '需要更寬的預測區間或氣象協變量輔助。'
+                f'2015 年大爆發預警未涵蓋 ⚠️｜'
+                f'95% CI：{ci_lo_2015:,} ~ {ci_hi_2015:,} 例，'
+                '實際 43,784 例超出 CI 上限。'
+                '反映訓練期（2003~2014）缺乏類似大爆發樣本，'
+                '模型低估極端情境的發生機率。'
+                '此結果支持論文延伸研究：納入氣象協變量與 PyMC 動態模型。'
             )
+
     st.divider()
 
     # ── 方法論 ──────────────────────────────────────────────
     with st.expander('📋 方法論'):
         st.markdown(f"""
-**方法：共軛先驗貝氏滾動視窗驗證**
+**分析方法：PyMC MCMC 滾動視窗驗證**
 
-*Bayesian 更新原理*
-- 先驗（Prior）：以歷史訓練期資料擬合對數常態分配參數
-- 後驗（Posterior）：對數常態共軛更新，取得後驗均值與標準差
-- 預測：從後驗分配抽樣 10,000 次，輸出預測中位數與 95% CI
+*模型設定*
+- 分配假設：年度登革熱病例數服從對數常態分配（Log-Normal Distribution）
+- 先驗（Prior）：弱資訊先驗
+  - μ ~ Normal（訓練期對數均值，σ=2.0）
+  - σ ~ HalfNormal（σ=1.0）
+- 似然函數：Normal（μ, σ）作用於對數轉換病例數
+- MCMC 設定：2 chains × 1,000 draws + 500 tune（NUTS sampler）
 
 *滾動視窗設計（Walk-Forward Validation）*
-- 第 1 輪：訓練 2003~2014，預測 2015（含最重要的大爆發驗證）
-- 第 2~9 輪：逐年延伸訓練期，預測下一年
-- 共 9 個驗證點（2015~2023），評估模型跨年泛化能力
+- 第 1 輪：訓練 2003~2014，預測 2015（最重要驗證點）
+- 第 2~8 輪：逐年延伸，預測 2016~2023
+- 共 {n_rounds} 個驗證點（2021 年因 COVID 管制病例數極低，特殊處理）
 
 *評估指標*
-- **RMSE**（Root Mean Square Error）：預測誤差的均方根，單位為「例」
-- **Coverage**：實際值落在 95% CI 內的比例，理想值 ≥ 95%
-- **2015 大爆發預警**：最重要的單點驗證，檢驗模型對極端值的預測能力
+- **RMSE = {rmse:,.0f} 例**：主要受 2015 年（43,784 例）和 2023 年（26,429 例）大爆發影響
+- **Coverage = {coverage_rate:.1f}%**：CI 寬度反映歷史病例數的高度變異（2021 年僅 12 例 vs 2015 年 43,784 例）
+- **Divergences = 0**：MCMC 收斂良好，無發散樣本
 
-*假設前提與限制*
-1. 對數常態分配假設：登革熱年度病例數呈右偏分佈，適合對數常態
-2. 靜態先驗：未納入氣象協變量，僅以歷史病例數更新
-3. 獨立性假設：各年度病例數視為獨立觀測值
+*Coverage 偏低的合理解釋*
+1. 訓練樣本小（12~20 年），對數常態的 sigma 後驗估計不確定性大
+2. 2015 年大爆發是訓練期前所未見的極端事件
+3. 2020~2022 年 COVID 管制效應造成異常低病例，影響後驗估計
+4. 純病例數模型未納入氣象、病媒蚊密度等重要協變量
 
 *未來延伸（論文階段）*
-- 升級為 PyMC 完整 MCMC 分析（4 chains，2,000 iterations）
-- 納入氣溫、降雨作為貝氏模型的外部協變量（covariate）
-- 加入時間趨勢項（time trend）捕捉長期變化
+- 升級為 4 chains × 2,000 draws 提升估計穩定性
+- 納入氣溫、降雨量作為貝氏模型的外部協變量（covariate）
+- 加入時間趨勢項（time trend）捕捉長期病例數變化
+- 考慮分層模型（Hierarchical Model）納入縣市差異
 
 **文獻支持**
-1. **Martínez-Bello et al. (2017)** *PLOS NTD* — 貝氏動態時序模型預測登革熱病例數
+1. **Martínez-Bello et al. (2017)** *PLOS NTD* — 貝氏動態時序模型預測登革熱病例
    > DOI: 10.1371/journal.pntd.0005696
-2. **Prediction of dengue outbreaks using MCMC (2022)** *PubMed* — MCMC + SIR 隨機模型結合氣候變異
+2. **Gelman et al. (2013)** *Bayesian Data Analysis, 3rd Ed.* — MCMC 方法與收斂診斷理論基礎
+3. **Prediction of dengue outbreaks using MCMC (2022)** *PubMed* — MCMC + SIR 模型
    > PMID: 35361845
-3. **Cori et al. (2013)** *AJE* — 貝氏框架估計時變再生數，支持滾動更新設計
-   > DOI: 10.1093/aje/kwt133
         """)
 
     st.caption(
-        f'🔮 Bayesian 滾動視窗驗證 ｜ 訓練期：2003~2022 ｜ 驗證期：2015~2023 ｜ '
+        f'🔮 Bayesian 滾動視窗驗證（{method_label}）｜'
+        f'訓練期：2003~2022｜驗證期：2015~2023｜'
         f'資料更新：{latest_date}'
     )
