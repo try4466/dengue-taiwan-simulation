@@ -93,6 +93,7 @@ st.sidebar.markdown('''
 def load_raw_df(csv_file):
     # 優先順序：手動上傳 > 自動下載 > repo 內建資料
     if csv_file is not None:
+        csv_file.seek(0)
         raw = csv_file.read()
         st.sidebar.success('✅ 已載入：手動上傳')
         return pd.read_csv(StringIO(raw.decode('utf-8-sig')), low_memory=False)
