@@ -1558,3 +1558,5 @@ COVID-19 邊境管制造成境外移入病例歸零，連帶抑制本土傳播�
 2. **Martínez-Bello et al. (2017)** *PLOS NTD* — 貝氏動態時序模型預測登革熱時序病例，DOI: 10.1371/journal.pntd.0005696
 3. **Gelman et al. (2013)** *Bayesian Data Analysis, 3rd Ed.* — Weakly Informative Prior 設計原則
 4. **BMC Med Res Methodol (2023)** — Bayesian 時空模型評估傳染病監測，DOI: 10.1186/s12874-023-01987-5
+
+""")
