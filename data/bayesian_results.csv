@@ -1,9 +1,10 @@
-﻿pred_year,train_end,n_train,actual,median_pred,mean_pred,ci_lo,ci_hi,std_pred,coverage,abs_error,pct_error,mu_post,sigma_post,method
-2015,2014,12,43419,900,2503,56,13463,9567,False,42518,97.9,6.7323,1.3275,PyMC MCMC (2 chains × 1000 draws)
-2016,2015,13,381,1249,5251,50,33433,18355,True,868,228.1,7.0564,1.6238,PyMC MCMC (2 chains × 1000 draws)
-2017,2016,14,10,1045,4977,37,30177,25770,False,1035,10350.8,6.9627,1.5892,PyMC MCMC (2 chains × 1000 draws)
-2018,2017,15,183,759,5634,14,39502,26442,True,576,314.9,6.6613,1.8724,PyMC MCMC (2 chains × 1000 draws)
-2019,2018,16,100,698,10797,13,27832,187750,True,598,598.8,6.5451,1.8468,PyMC MCMC (2 chains × 1000 draws)
-2020,2019,17,73,678,4513,16,29809,20422,True,605,830.0,6.4422,1.8636,PyMC MCMC (2 chains × 1000 draws)
-2022,2021,18,20,543,5118,11,30010,69688,True,523,2618.6,6.3175,1.8747,PyMC MCMC (2 chains × 1000 draws)
-2023,2022,19,26429,480,3530,8,25555,14709,False,25948,98.2,6.1669,1.9552,PyMC MCMC (2 chains × 1000 draws)
+﻿pred_year,train_end,n_train,actual,median_pred,mean_pred,ci_lo,ci_hi,std_pred,coverage,abs_error,pct_error,mu_post,sigma_post,divergences,method
+2015,2014,11,43697,1159,13479,90,15174,609977,False,42537,97.3,7.0579,0.8487,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2016,2015,12,863,1328,34379,47,41158,1010857,True,465,53.9,7.2098,1.1315,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2017,2016,13,348,1262,25670,57,31347,785608,True,914,262.9,7.161,1.0503,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2018,2017,14,525,1133,27591,49,28921,926201,True,608,116.0,7.0495,1.0692,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2019,2018,15,644,1052,20531,53,22830,755174,True,408,63.4,6.9728,1.0196,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2020,2019,16,141,992,13563,63,16503,580836,True,851,604.2,6.9114,0.9458,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2021,2020,17,12,923,19426,43,20684,706779,False,911,7594.9,6.8363,1.0445,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2022,2021,18,85,852,32977,22,32125,1041327,True,767,903.0,6.7542,1.2445,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
+2023,2022,19,26666,766,33802,16,35322,980213,True,25899,97.1,6.645,1.326,0,"PyMC Student-t (ν=4, 4 chains × 2000 draws)"
