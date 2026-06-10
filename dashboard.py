@@ -1157,7 +1157,7 @@ with tab5:
     # ── 優先讀取 PyMC 結果 ──────────────────────────────────
     if os.path.exists(BAYES_CSV):
         res_df = pd.read_csv(BAYES_CSV, encoding='utf-8-sig')
-        method_label = 'PyMC MCMC（2 chains × 1,000 draws）'
+        method_label = res_df['method'].iloc[0] if 'method' in res_df.columns else 'PyMC MCMC'
         st.success(f'✅ 已載入 PyMC MCMC 結果｜{method_label}')
     else:
         # 備用：共軛先驗快速估計
@@ -1541,8 +1541,9 @@ with tab5:
 
 **① 2015 年（實際 43,697 例）**
 2015 年台灣登革熱大爆發為 20 年最嚴重事件，病例數為前一年的 2.8 倍。
-在 log scale 上，43,697 例壓在 95% CI 上限的 0.1% 邊界，屬統計邊際案例（borderline case）。
-若採用 97% CI，2015 年即可被覆蓋。此結果反映 95% CI 本就設計來排除最極端 5% 情境。
+訓練期（2003~2014）僅 11 年資料，缺乏類似規模大爆發的歷史樣本，模型低估了極端情境的發生機率。
+此為小樣本 Bayesian 模型的固有限制（small-sample limitation）。
+若採用 97% CI，2015 年即可被覆蓋，顯示模型對右尾不確定性的捕捉方向正確。
 
 **② 2021 年（實際 12 例）**
 COVID-19 邊境管制造成境外移入病例歸零，連帶抑制本土傳播鏈建立。
