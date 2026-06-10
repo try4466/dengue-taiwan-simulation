@@ -55,15 +55,16 @@ CDC_CSV_URL = 'https://od.cdc.gov.tw/eic/Dengue_Daily.csv'
 # 資料來源
 st.sidebar.markdown('**📡 資料來源**')
 if st.sidebar.button('🔄 自動下載最新資料（CDC）', use_container_width=True):
-    with st.spinner('正在從疾管署下載最新資料...'):
-        try:
-            resp = requests.get(CDC_CSV_URL, timeout=30, verify=False)
-            resp.raise_for_status()
-            st.session_state['auto_csv_bytes'] = resp.content
-            st.sidebar.success('✅ 下載成功！')
-        except Exception as e:
-            st.sidebar.error(f'❌ 下載失敗：{e}')
-            st.sidebar.caption('請改用手動上傳')
+        with st.spinner('正在從疾管署下載最新資料...'):
+            try:
+                resp = requests.get(CDC_CSV_URL, timeout=30, verify=False)
+                if 'not in allowlist' in resp.text[:100] or not resp.ok:
+                    raise ValueError("境外IP封鎖")
+                resp.raise_for_status()
+                st.session_state['auto_csv_bytes'] = resp.content
+                st.sidebar.success('✅ 下載成功！')
+            except Exception:
+                st.sidebar.warning('⚠️ 疾管署限制境外連線，請用下方手動上傳')
 
 st.sidebar.caption('或手動上傳 CSV：')
 csv_file = st.sidebar.file_uploader(
